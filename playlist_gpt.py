@@ -11,8 +11,8 @@ from syrics.api import Spotify
 PREPEND = "https://open.spotify.com/track/"
 SP_DC_KEY = "SP_DC_KEY.txt"
 LINKS_FILE = "links.txt"
-NO_LYRICS_FILE = "Playlists/no_lyrics.txt"
 PLAY_DIR = "Playlists/"
+NO_LYRICS_FILE = PLAY_DIR + "no_lyrics.txt"
 EXPORT_DIR = "Export/"
 CACHE_DIR = ".cache/"
 NUM_ITERATIONS = 5
@@ -232,21 +232,28 @@ def export_playlists():
         if entry.is_dir():
             export_num += 1
     
-    folder = f"trial_{export_num}_iter_{NUM_ITERATIONS}/"
+    folder_dir = EXPORT_DIR + f"trial_{export_num}_iter_{NUM_ITERATIONS}/"
+
+    if not os.path.isdir(folder_dir):
+        os.makedirs(folder_dir)
 
     for entry in os.scandir(PLAY_DIR):
-        shutil.copy(entry.path, EXPORT_DIR + folder + entry.name)
+        shutil.copyfile(entry.path, folder_dir + entry.name)
 
 def restart_session():
     global current_playlist 
     current_playlist = []
     
     clean_play_dir()
-    clean_export_dir()
     clean_links_file()
 
+def complete_reset():
+    restart_session()
+    clean_export_dir()
+    clean_cache_dir()
+
 def auto_export_high_iter():
-    if NUM_ITERATIONS > 6:
+    if NUM_ITERATIONS > 3:
         export_playlists()
 
 
@@ -267,6 +274,7 @@ def run_decision(choice):
     elif choice == 3:
         check_num_remaining()
         analyze_lyrics_from_links()
+        auto_export_high_iter()
         print("Lyrics categorized...")
     # Export playlists
     elif choice == 4:
@@ -290,7 +298,11 @@ def run_decision(choice):
         print("Lyrics downloaded...")
         check_num_remaining()
         analyze_lyrics_from_links()
+        auto_export_high_iter()
         print("Lyrics categorized...")
+    elif choice == 8:
+        #complete_reset()
+        print("careful")
 
     # No Choice
     else: 
@@ -304,7 +316,8 @@ def display_menu():
         4. Export Playlists.\n\
         5. Restart Session.\n\
         6. Clear cache.\n\
-        7. Run all."
+        7. Run all.\n\
+        8. Complete reset\n"
     print(message)
 
 ############
@@ -321,7 +334,6 @@ def main():
     choice = int(choice) if choice.isnumeric() else 0
 
     run_decision(choice)
-    auto_export_high_iter()
     
 if __name__ == "__main__":
     main()
