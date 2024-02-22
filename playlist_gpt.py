@@ -15,6 +15,7 @@ PLAY_DIR = "Playlists/"
 NO_LYRICS_FILE = PLAY_DIR + "no_lyrics.txt"
 EXPORT_DIR = "Export/"
 CACHE_DIR = ".cache/"
+STATE_FILE = ".state"
 NUM_ITERATIONS = 5
 
 with open(SP_DC_KEY, "r") as file:
@@ -22,7 +23,7 @@ with open(SP_DC_KEY, "r") as file:
 
 syrics = Spotify(sp_dc)
 
-current_playlist = []
+current_state = []
 
 PROVIDER = g4f.Provider.Aura #gpt4 best
         # g4f.Provider.Koala #gpt4
@@ -83,28 +84,14 @@ def process_track_lyrics(track_id):
             cache_lyrics(lyrics, track_id)
 
 def get_lyrics_from_links():
-    global current_playlist
-    for track_id, _ in current_playlist:
+    global current_state
+    for track_id in current_state:
         print(track_id)
         process_track_lyrics(track_id)
 
 #########################
 ### CATEGORIZE LYRICS ###
 #########################
-        
-def num_processed():
-    global current_playlist
-    num_processed = 0
-    for index in range(len(current_playlist)):
-        if current_playlist[index][1] == True:
-            num_processed += 1
-    return num_processed
-
-def check_num_remaining():
-    global current_playlist
-    num_remaining = len(current_playlist) - num_processed()
-    print(f"Lyric entries remaining: {num_remaining}")
-
 def send_message(content):
     response = g4f.ChatCompletion.create(
         model="g4f.models.gpt_4",
@@ -137,10 +124,10 @@ def finalize_category(categories):
     return final_category
 
 def analyze_lyrics_from_links():
-    global current_playlist
-
-    for index in range(len(current_playlist)):
-        track_id = current_playlist[index][0]
+    global current_state
+    to_process = len(current_state)
+    while to_process > 0:
+        track_id = current_state[0]
         
         with open(os.path.join(CACHE_DIR, track_id), "r") as file:
             lyrics = file.read()
@@ -149,11 +136,15 @@ def analyze_lyrics_from_links():
             # Request response from g4f server, handle errors
             try:
                 if NUM_ITERATIONS > 2:
-                    categories = set()
+                    categories = {}
                     for _ in range(NUM_ITERATIONS):
                         response = send_message(lyrics)
                         category = get_category_from_response(response)
-                        categories.add(category)
+                        if category in categories:
+                            categories[category] += 1
+                        else:
+                            categories[category] = 1
+
                     print(categories)
                     category = finalize_category(categories)
                 else:
@@ -163,50 +154,67 @@ def analyze_lyrics_from_links():
                 print(f"Server shutout: {e}")
                 continue
 
-            # Add to playlist and mark as processed
+            # Add to category playlist
             categorize_lyrics_pl(category, track_id)
-            current_playlist[index] = (track_id, True)
 
+            # Update state
+            current_state.pop(0)
+            save_state()
+            to_process -= 1
+        # with
+    # for
 
-###########################
-### DIRECTORY FUNCTIONS ###
-###########################
-            
-def set_current_playlist():
-    global current_playlist
+##################
+### SAVE STATE ###
+##################
+def check_num_remaining():
+    global current_state
+    num_remaining = len(current_state)
+    print(f"Lyric entries remaining: {num_remaining}")
+
+def load_state():
+    global current_state
+    with open(STATE_FILE, "r") as file:
+        current_state = [track_id.strip() for track_id in file.readlines()]
+    print("Previous state loaded.")
+
+def save_state():
+    global current_state
+    with open(STATE_FILE, "w") as file:
+        for track_id in current_state:
+            file.write(track_id + "\n")
+    print("State saved.")
+
+# Create link list to process
+def initialize_state():
+    global current_state
 
     with open(LINKS_FILE, 'r') as file:
         links = file.read().splitlines()
 
     for link in links:
         track_id = link.split("/")[-1].split("?")[0]
-        current_playlist.append((track_id, False))
+        current_state.append(track_id)
 
-def make_dirs():
+    save_state()
+
+###########################
+### DIRECTORY FUNCTIONS ###
+###########################
+
+# Create necessary directories
+def setup():
+    if not check_links(): quit()
+
+    if not os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "w+") as file:
+            file.write("")
+
     for dir_path in [PLAY_DIR, CACHE_DIR]:
         if not os.path.isdir(dir_path):
             os.makedirs(dir_path)
 
-def clean_play_dir():
-    if os.path.exists(NO_LYRICS_FILE):
-        os.remove(NO_LYRICS_FILE)
-    for entry in os.scandir(PLAY_DIR):
-        with open(entry.path, "w+") as file:
-            file.write("")
-
-def clean_export_dir():
-    if os.path.isdir(EXPORT_DIR):
-        shutil.rmtree(EXPORT_DIR)
-
-def clean_cache_dir():
-    for entry in os.scandir(CACHE_DIR):
-        if not os.path.isdir(entry.path):
-            os.remove(entry.path)
-
-def clean_links_file():
-    with open(LINKS_FILE, "w") as file:
-        file.write("")
-
+# Verify list in links.txt
 def check_links():
     if not os.path.exists(LINKS_FILE):
         clean_links_file()
@@ -221,7 +229,33 @@ def check_links():
         else:
             print("NICE LINKS, SETUP COMPLETE")
             return True
+
+# Reset Playlist/
+def clean_play_dir():
+    if os.path.exists(NO_LYRICS_FILE):
+        os.remove(NO_LYRICS_FILE)
+    for entry in os.scandir(PLAY_DIR):
+        with open(entry.path, "w+") as file:
+            file.write("")
+
+# Reset Exports/
+def clean_export_dir():
+    if os.path.isdir(EXPORT_DIR):
+        shutil.rmtree(EXPORT_DIR)
+
+# Reset .cache/
+def clean_cache_dir():
+    for entry in os.scandir(CACHE_DIR):
+        if not os.path.isdir(entry.path):
+            os.remove(entry.path)
+
+# Reset links.txt
+def clean_links_file():
+    with open(LINKS_FILE, "w") as file:
+        file.write("")
+
         
+# Save PlaylistGPT output to Export/
 def export_playlists():
     if not os.path.isdir(EXPORT_DIR):
         os.makedirs(EXPORT_DIR)
@@ -241,11 +275,11 @@ def export_playlists():
         shutil.copyfile(entry.path, folder_dir + entry.name)
 
 def restart_session():
-    global current_playlist 
-    current_playlist = []
+    global current_state 
+    current_state = []
     
     clean_play_dir()
-    clean_links_file()
+    #clean_links_file()
 
 def complete_reset():
     restart_session()
@@ -255,7 +289,6 @@ def complete_reset():
 def auto_export_high_iter():
     if NUM_ITERATIONS > 3:
         export_playlists()
-
 
 ##################
 ### USER INPUT ###
@@ -268,10 +301,12 @@ def run_decision(choice):
         print("PASTE LINKS INTO LINKS.TXT")
     # Get lyrics
     elif choice == 2:
+        initialize_state()
         get_lyrics_from_links()
         print("Lyrics downloaded...")
     # Categorize lyrics
     elif choice == 3:
+        load_state()
         check_num_remaining()
         analyze_lyrics_from_links()
         auto_export_high_iter()
@@ -326,13 +361,15 @@ def display_menu():
 
 def main():
     
-    make_dirs()
-    if not check_links(): quit()
-    set_current_playlist()
+    # Setup
+    setup()
+
+    # User input
     display_menu()
     choice = input("Choice: ")
     choice = int(choice) if choice.isnumeric() else 0
 
+    # Run PlaylistGPT
     run_decision(choice)
     
 if __name__ == "__main__":
