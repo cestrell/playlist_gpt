@@ -14,6 +14,12 @@ NO_LYRICS_FILE = "Playlists/no_lyrics.txt"
 LYRICS_DIR = "Lyrics/"
 PLAY_DIR = "Playlists/"
 EXPORT_DIR = "Export/"
+CACHE_DIR = ".cache/"
+
+with open(SP_DC_KEY, "r") as file:
+    sp_dc = file.read().strip()
+
+syrics = Spotify(sp_dc)
 
 PROVIDER = g4f.Provider.Aura #gpt4 best
         # g4f.Provider.Koala #gpt4
@@ -30,9 +36,9 @@ DIRECTION = "Analizamos las canciones y las dividimos con precisión en 5 catego
     5. Enamorados. \
     ANALIZA LO SIGUIENTE Y RESPONDE SOLO CON EL NÚMERO Y CATEGORÍA: "
 
-##################
-### GET LYRICS ###
-##################
+################################
+### PROCESS AND CACHE LYRICS ###
+################################
 
 def format_lrc(lyrics_json):
     lyrics = lyrics_json['lyrics']['lines']
@@ -44,28 +50,42 @@ def format_lrc(lyrics_json):
     lrc = lrc.replace("\n", " ")
     return lrc
 
-def get_lyrics():
-    with open(SP_DC_KEY, "r") as file:
-        sp_dc = file.read().strip()
+def cache_lyrics(lyrics, track_id):
+    filename = os.path.join(CACHE_DIR, track_id)
+    with open(filename, "w+") as file:   
+        file.write(lyrics)
 
-    syrics = Spotify(sp_dc)
+def retrieve_lyrics_from_cache(track_id):
+    filename = os.path.join(CACHE_DIR, track_id)
+    if os.path.exists(filename):
+        with open(filename, "r") as file:
+            return file.read()
+    else:
+        return None
+    
+def process_no_lyrics(track_id):
+    with open(NO_LYRICS_FILE, 'a') as file:
+        file.write(PREPEND + track_id + "\n")
 
+def process_track_lyrics(track_id):
+    cached_lyrics = retrieve_lyrics_from_cache(track_id)
+    if cached_lyrics:
+        lyrics = cached_lyrics
+    else:
+        lyrics_json = syrics.get_lyrics(track_id)
+        if lyrics_json is None:
+            process_no_lyrics(track_id)
+        else: 
+            lyrics = format_lrc(lyrics_json)
+            cache_lyrics(lyrics, track_id)
+
+def get_lyrics_from_links():
     with open(LINKS_FILE, 'r') as file:
         links = file.read().splitlines()
 
     for link in links:
         track_id = link.split("/")[-1].split("?")[0]
-        lyrics_json = syrics.get_lyrics(track_id)
-        
-        if lyrics_json is None:
-            with open(NO_LYRICS_FILE, 'a') as file:
-                file.write(PREPEND + track_id + "\n")
-        else:
-            lyrics = format_lrc(lyrics_json)
-            filename = os.path.join(LYRICS_DIR, f"{track_id}.lrc")
-            with open(filename, "w+") as file:   
-                file.write(lyrics)
-    print("Lyric download complete.\n")
+        process_track_lyrics(track_id)
 
 #########################
 ### CATEGORIZE LYRICS ###
@@ -94,8 +114,8 @@ def categorize(response, track_id):
             print(f"Added {track_id} to UNCATEGORIZED")
 
 def analyze_lyrics():
-    for entry in os.scandir(LYRICS_DIR):
-            with open(os.path.join(LYRICS_DIR, entry.name), "r") as file:
+    for entry in os.scandir(CACHE_DIR):
+            with open(os.path.join(CACHE_DIR, entry.name), "r") as file:
                 lyrics = file.read()
                 track_id = entry.name.split(".")[0]
                 response = send_message(lyrics)
@@ -106,12 +126,12 @@ def analyze_lyrics():
 ### HELPER FUNCTIONS ###
 ########################
 def make_dirs():
-    for dir_path in [LYRICS_DIR, PLAY_DIR, EXPORT_DIR]:
+    for dir_path in [LYRICS_DIR, PLAY_DIR, EXPORT_DIR, CACHE_DIR]:
         if not os.path.isdir(dir_path):
             os.makedirs(dir_path)
 
 def check_lyrics_dir():
-    num_lyrics = len(os.listdir(LYRICS_DIR))
+    num_lyrics = len(os.listdir(CACHE_DIR))
     if num_lyrics == 0:
         print("Run Get Lyrics first")
         quit()
@@ -125,6 +145,11 @@ def clean_play_dir():
 
 def clean_export_dir():
     for entry in os.scandir(EXPORT_DIR):
+        if not os.path.isdir(entry.path):
+            os.remove(entry.path)
+
+def clean_cache_dir():
+    for entry in os.scandir(CACHE_DIR):
         if not os.path.isdir(entry.path):
             os.remove(entry.path)
 
@@ -175,11 +200,13 @@ def run_decision(choice):
             print("Lyrics already downloaded...")
         else:
             print("Getting lyrics...")
-            get_lyrics()
+            get_lyrics_from_links()
+            print("Lyrics downloaded...")
     elif choice == 3:
         print("Categorizing lyrics...")
         check_lyrics_dir()
         analyze_lyrics()
+        print("Lyrics categorized...")
     elif choice == 4:
         print("Exporting playlists...")
         export_playlists()
@@ -209,6 +236,7 @@ def display_menu():
 ############
 
 def main():
+    
     make_dirs()
 
     if not check_links(): quit()
