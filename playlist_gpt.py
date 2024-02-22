@@ -3,6 +3,17 @@ import shutil
 import g4f
 from collections import Counter
 from syrics.api import Spotify
+import argparse
+
+#################
+### ARGUMENTS ###
+#################
+parser = argparse.ArgumentParser(description='PlaylistGPT')
+parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+args = parser.parse_args()
+
+def verbose_print(message):
+    if VERBOSE: print(message)
 
 #################
 ### CONSTANTS ###
@@ -16,7 +27,9 @@ NO_LYRICS_FILE = PLAY_DIR + "no_lyrics.txt"
 EXPORT_DIR = "Export/"
 CACHE_DIR = ".cache/"
 STATE_FILE = ".state"
-NUM_ITERATIONS = 5
+NUM_ITERATIONS = 1 # DEFAULT
+# NUM_ITERATIONS = 5 # MORE ACCURACY
+VERBOSE = args.verbose
 
 with open(SP_DC_KEY, "r") as file:
     sp_dc = file.read().strip()
@@ -57,11 +70,11 @@ def format_lrc(lyrics_json):
 def retrieve_lyrics_from_cache(track_id):
     filename = os.path.join(CACHE_DIR, track_id)
     if os.path.exists(filename):
-        print("Cache accessed")
+        verbose_print(f"{track_id}: Cache accessed")
         with open(filename, "r") as file:
             return file.read()
     else:
-        print("Not in cache")
+        verbose_print(f"{track_id}: Not in cache. Downloading...")
         return None
     
 def process_no_lyrics(track_id):
@@ -86,7 +99,6 @@ def process_track_lyrics(track_id):
 def get_lyrics_from_links():
     global current_state
     for track_id in current_state:
-        print(track_id)
         process_track_lyrics(track_id)
 
 #########################
@@ -104,11 +116,11 @@ def categorize_lyrics_pl(category, track_id):
     if category != "uncategorized":
         with open(os.path.join(PLAY_DIR, f"bien_{category}.txt"), 'a') as file:
             file.write(PREPEND + track_id + "\n")
-            print(f"Added {track_id} to {category.upper()}")
+            verbose_print(f"Added {track_id} to {category.upper()}")
     else:
         with open(os.path.join(PLAY_DIR, "uncategorized.txt"), 'a') as file:
             file.write(PREPEND + track_id + "\n")
-            print(f"Added {track_id} to UNCATEGORIZED")
+            verbose_print(f"Added {track_id} to UNCATEGORIZED")
 
 def get_category_from_response(response):
     categories = ["arriba", "tristes", "belicos", "sensual", "enamorado"]
@@ -145,13 +157,12 @@ def analyze_lyrics_from_links():
                         else:
                             categories[category] = 1
 
-                    print(categories)
                     category = finalize_category(categories)
                 else:
                     response = send_message(lyrics)
                     category = get_category_from_response(response)
             except Exception as e:
-                print(f"Server shutout: {e}")
+                verbose_print(f"Server shutout: {e}")
                 continue
 
             # Add to category playlist
@@ -170,20 +181,20 @@ def analyze_lyrics_from_links():
 def check_num_remaining():
     global current_state
     num_remaining = len(current_state)
-    print(f"Lyric entries remaining: {num_remaining}")
+    verbose_print(f"Lyric entries remaining: {num_remaining}\n")
 
 def load_state():
     global current_state
     with open(STATE_FILE, "r") as file:
         current_state = [track_id.strip() for track_id in file.readlines()]
-    print("Previous state loaded.")
+    verbose_print("Previous state loaded.")
 
 def save_state():
     global current_state
     with open(STATE_FILE, "w") as file:
         for track_id in current_state:
             file.write(track_id + "\n")
-    print("State saved.")
+    verbose_print("State saved.")
 
 # Create link list to process
 def initialize_state():
@@ -297,44 +308,44 @@ def auto_export_high_iter():
 def run_decision(choice):
     # Set up
     if choice == 1: 
-        print("Setting up...")
+        verbose_print("Setting up...")
         print("PASTE LINKS INTO LINKS.TXT")
     # Get lyrics
     elif choice == 2:
         initialize_state()
         get_lyrics_from_links()
-        print("Lyrics downloaded...")
+        verbose_print("Lyrics downloaded...")
     # Categorize lyrics
     elif choice == 3:
         load_state()
         check_num_remaining()
         analyze_lyrics_from_links()
         auto_export_high_iter()
-        print("Lyrics categorized...")
+        verbose_print("Lyrics categorized...")
     # Export playlists
     elif choice == 4:
         export_playlists()
-        print("Playlists exported...")
+        verbose_print("Playlists exported...")
     # Restart session
     elif choice == 5:
         confirm = input("PRESS 1 TO CONFIRM RESTART SESSION: ")
         confirm = int(confirm) if confirm.isnumeric() else 0
         if confirm == 1:
-            print("Cleaning...")
+            verbose_print("Cleaning...")
             restart_session()
         else:
-            print("Nothing happened...")
+            verbose_print("Nothing happened...")
     # Clean cache
     elif choice == 6:
         clean_cache_dir()
     elif choice == 7:
         # TESTING
         get_lyrics_from_links()
-        print("Lyrics downloaded...")
+        verbose_print("Lyrics downloaded...")
         check_num_remaining()
         analyze_lyrics_from_links()
         auto_export_high_iter()
-        print("Lyrics categorized...")
+        verbose_print("Lyrics categorized...")
     elif choice == 8:
         #complete_reset()
         print("careful")
