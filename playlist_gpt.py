@@ -1,7 +1,8 @@
 import os
 import shutil
-from syrics.api import Spotify
 import g4f
+from collections import Counter
+from syrics.api import Spotify
 
 #################
 ### CONSTANTS ###
@@ -14,6 +15,7 @@ NO_LYRICS_FILE = "Playlists/no_lyrics.txt"
 PLAY_DIR = "Playlists/"
 EXPORT_DIR = "Export/"
 CACHE_DIR = ".cache/"
+NUM_ITERATIONS = 5
 
 with open(SP_DC_KEY, "r") as file:
     sp_dc = file.read().strip()
@@ -51,11 +53,6 @@ def format_lrc(lyrics_json):
     lrc = lrc.replace("\n", " ")
     return lrc
 
-def cache_lyrics(lyrics, track_id):
-    filename = os.path.join(CACHE_DIR, track_id)
-    with open(filename, "w+") as file:
-        file.write(lyrics)
-
 def retrieve_lyrics_from_cache(track_id):
     filename = os.path.join(CACHE_DIR, track_id)
     if os.path.exists(filename):
@@ -70,11 +67,14 @@ def process_no_lyrics(track_id):
     with open(NO_LYRICS_FILE, 'a') as file:
         file.write(PREPEND + track_id + "\n")
 
+def cache_lyrics(lyrics, track_id):
+    filename = os.path.join(CACHE_DIR, track_id)
+    with open(filename, "w+") as file:
+        file.write(lyrics)
+
 def process_track_lyrics(track_id):
     cached_lyrics = retrieve_lyrics_from_cache(track_id)
-    if cached_lyrics:
-        lyrics = cached_lyrics
-    else:
+    if not cached_lyrics:
         lyrics_json = syrics.get_lyrics(track_id)
         if lyrics_json is None:
             process_no_lyrics(track_id)
@@ -82,27 +82,28 @@ def process_track_lyrics(track_id):
             lyrics = format_lrc(lyrics_json)
             cache_lyrics(lyrics, track_id)
 
+def get_lyrics_from_links():
+    global current_playlist
+    for track_id, _ in current_playlist:
+        print(track_id)
+        process_track_lyrics(track_id)
+
+#########################
+### CATEGORIZE LYRICS ###
+#########################
+        
 def num_processed():
+    global current_playlist
     num_processed = 0
     for index in range(len(current_playlist)):
         if current_playlist[index][1] == True:
             num_processed += 1
     return num_processed
 
-def get_lyrics_from_links():
+def check_num_remaining():
     global current_playlist
-
-    with open(LINKS_FILE, 'r') as file:
-        links = file.read().splitlines()
-
-    for link in links:
-        track_id = link.split("/")[-1].split("?")[0]
-        process_track_lyrics(track_id)
-        current_playlist.append((track_id, False))
-
-#########################
-### CATEGORIZE LYRICS ###
-#########################
+    num_remaining = len(current_playlist) - num_processed()
+    print(f"Lyric entries remaining: {num_remaining}")
 
 def send_message(content):
     response = g4f.ChatCompletion.create(
@@ -112,55 +113,79 @@ def send_message(content):
     )
     return response
 
-def categorize_lyrics(response, track_id):
-    categories = ["arriba", "tristes", "belicos", "sensual", "enamorado"]
-
-    if response[0].isnumeric() and 0 < int(response[0]) < 6:
-        category_index = int(response[0]) - 1
-        with open(os.path.join(PLAY_DIR, f"bien_{categories[category_index]}.txt"), 'a') as file:
+def categorize_lyrics_pl(category, track_id):
+    if category != "uncategorized":
+        with open(os.path.join(PLAY_DIR, f"bien_{category}.txt"), 'a') as file:
             file.write(PREPEND + track_id + "\n")
-            print(f"Added {track_id} to {categories[category_index].upper()}")
+            print(f"Added {track_id} to {category.upper()}")
     else:
         with open(os.path.join(PLAY_DIR, "uncategorized.txt"), 'a') as file:
             file.write(PREPEND + track_id + "\n")
             print(f"Added {track_id} to UNCATEGORIZED")
 
-def analyze_lyrics():
+def get_category_from_response(response):
+    categories = ["arriba", "tristes", "belicos", "sensual", "enamorado"]
+    if response[0].isnumeric() and 0 < int(response[0]) < 6:
+        category = categories[int(response[0]) - 1]
+        return category
+    else: 
+        return "uncategorized"
+    
+def finalize_category(categories):
+    category_counts = Counter(categories)
+    final_category = max(category_counts, key=category_counts.get)
+    return final_category
+
+def analyze_lyrics_from_links():
     global current_playlist
 
     for index in range(len(current_playlist)):
         track_id = current_playlist[index][0]
-
+        
         with open(os.path.join(CACHE_DIR, track_id), "r") as file:
             lyrics = file.read()
-            response = send_message(lyrics)
-            categorize_lyrics(response, track_id)
+            category = "uncategorized"
+
+            # Request response from g4f server, handle errors
+            try:
+                if NUM_ITERATIONS > 2:
+                    categories = set()
+                    for _ in range(NUM_ITERATIONS):
+                        response = send_message(lyrics)
+                        category = get_category_from_response(response)
+                        categories.add(category)
+                    print(categories)
+                    category = finalize_category(categories)
+                else:
+                    response = send_message(lyrics)
+                    category = get_category_from_response(response)
+            except Exception as e:
+                print(f"Server shutout: {e}")
+                continue
+
+            # Add to playlist and mark as processed
+            categorize_lyrics_pl(category, track_id)
             current_playlist[index] = (track_id, True)
 
-
-    for entry in os.scandir(CACHE_DIR):
-            with open(os.path.join(CACHE_DIR, entry.name), "r") as file:
-                lyrics = file.read()
-                track_id = entry.name.split(".")[0]
-                response = send_message(lyrics)
-                categorize_lyrics(response, track_id)
-                os.remove(entry.path)
 
 ###########################
 ### DIRECTORY FUNCTIONS ###
 ###########################
+            
+def set_current_playlist():
+    global current_playlist
+
+    with open(LINKS_FILE, 'r') as file:
+        links = file.read().splitlines()
+
+    for link in links:
+        track_id = link.split("/")[-1].split("?")[0]
+        current_playlist.append((track_id, False))
+
 def make_dirs():
     for dir_path in [PLAY_DIR, CACHE_DIR]:
         if not os.path.isdir(dir_path):
             os.makedirs(dir_path)
-
-def check_lyrics_dir():
-    if len(current_playlist) == 0:
-        print("Run Get Lyrics first")
-        quit()
-    else:
-        num_remaining = len(current_playlist) - num_processed()
-        print(f"Lyric entries remaining: {num_remaining}")
 
 def clean_play_dir():
     if os.path.exists(NO_LYRICS_FILE):
@@ -200,32 +225,54 @@ def check_links():
 def export_playlists():
     if not os.path.isdir(EXPORT_DIR):
         os.makedirs(EXPORT_DIR)
+    
+    # Copy over files
+    export_num = 0
+    for entry in os.scandir(EXPORT_DIR):
+        if entry.is_dir():
+            export_num += 1
+    
+    folder = f"trial_{export_num}_iter_{NUM_ITERATIONS}/"
+
     for entry in os.scandir(PLAY_DIR):
-        shutil.copy(entry.path, EXPORT_DIR + entry.name)
+        shutil.copy(entry.path, EXPORT_DIR + folder + entry.name)
 
 def restart_session():
+    global current_playlist 
+    current_playlist = []
+    
     clean_play_dir()
     clean_export_dir()
     clean_links_file()
+
+def auto_export_high_iter():
+    if NUM_ITERATIONS > 6:
+        export_playlists()
+
 
 ##################
 ### USER INPUT ###
 ##################
 
 def run_decision(choice):
+    # Set up
     if choice == 1: 
         print("Setting up...")
         print("PASTE LINKS INTO LINKS.TXT")
+    # Get lyrics
     elif choice == 2:
         get_lyrics_from_links()
         print("Lyrics downloaded...")
+    # Categorize lyrics
     elif choice == 3:
-        check_lyrics_dir()
-        analyze_lyrics()
+        check_num_remaining()
+        analyze_lyrics_from_links()
         print("Lyrics categorized...")
+    # Export playlists
     elif choice == 4:
         export_playlists()
         print("Playlists exported...")
+    # Restart session
     elif choice == 5:
         confirm = input("PRESS 1 TO CONFIRM RESTART SESSION: ")
         confirm = int(confirm) if confirm.isnumeric() else 0
@@ -234,14 +281,15 @@ def run_decision(choice):
             restart_session()
         else:
             print("Nothing happened...")
+    # Clean cache
     elif choice == 6:
         clean_cache_dir()
     elif choice == 7:
         # TESTING
         get_lyrics_from_links()
         print("Lyrics downloaded...")
-        check_lyrics_dir()
-        analyze_lyrics()
+        check_num_remaining()
+        analyze_lyrics_from_links()
         print("Lyrics categorized...")
 
     # No Choice
@@ -266,14 +314,14 @@ def display_menu():
 def main():
     
     make_dirs()
-
     if not check_links(): quit()
-
+    set_current_playlist()
     display_menu()
     choice = input("Choice: ")
     choice = int(choice) if choice.isnumeric() else 0
 
     run_decision(choice)
+    auto_export_high_iter()
     
 if __name__ == "__main__":
     main()
