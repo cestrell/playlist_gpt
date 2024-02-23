@@ -8,6 +8,7 @@ import argparse
 #################
 ### ARGUMENTS ###
 #################
+
 parser = argparse.ArgumentParser(description='PlaylistGPT')
 parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
 args = parser.parse_args()
@@ -27,8 +28,8 @@ NO_LYRICS_FILE = PLAY_DIR + "no_lyrics.txt"
 EXPORT_DIR = "Export/"
 CACHE_DIR = ".cache/"
 STATE_FILE = ".state"
-NUM_ITERATIONS = 1 # DEFAULT
-# NUM_ITERATIONS = 5 # MORE ACCURACY
+# NUM_ITERATIONS = 1 # DEFAULT
+NUM_ITERATIONS = 5 # MORE ACCURACY
 VERBOSE = args.verbose
 
 with open(SP_DC_KEY, "r") as file:
@@ -37,6 +38,10 @@ with open(SP_DC_KEY, "r") as file:
 syrics = Spotify(sp_dc)
 
 current_state = []
+
+##################
+### GPT 4 FREE ###
+##################
 
 PROVIDER = g4f.Provider.Aura #gpt4 best
         # g4f.Provider.Koala #gpt4
@@ -52,6 +57,27 @@ DIRECTION = "Analizamos las canciones y las dividimos con precisión en 5 catego
     4. Tensión sensual.\
     5. Enamorados. \
     ANALIZA LO SIGUIENTE Y RESPONDE SOLO CON EL NÚMERO Y CATEGORÍA: "
+
+#########################
+### GET PLAYLIST INFO ###
+#########################
+
+def get_playlist():    
+    while True:
+        playlist_link = input("Enter the Spotify playlist link: ")
+        if "spotify" in playlist_link.lower(): break
+        else: print("Enter valid spotify link.")
+
+    playlist_id = playlist_link.split("/")[-1].split("?")[0]
+    
+    playlist_data = syrics.playlist(playlist_id)
+    playlist_total = playlist_data['tracks']['total']
+    playlist = syrics.playlist_tracks(playlist_id, playlist_total)
+
+    with open("links.txt", "a+") as file:
+        for track_id in playlist:
+            file.write(PREPEND + track_id + '\n')
+
 
 ################################
 ### PROCESS AND CACHE LYRICS ###
@@ -104,6 +130,7 @@ def get_lyrics_from_links():
 #########################
 ### CATEGORIZE LYRICS ###
 #########################
+
 def send_message(content):
     response = g4f.ChatCompletion.create(
         model="g4f.models.gpt_4",
@@ -178,6 +205,7 @@ def analyze_lyrics_from_links():
 ##################
 ### SAVE STATE ###
 ##################
+            
 def check_num_remaining():
     global current_state
     num_remaining = len(current_state)
@@ -217,6 +245,10 @@ def initialize_state():
 def setup():
     if not check_links(): quit()
 
+    if not os.path.exists(SP_DC_KEY):
+        with open(SP_DC_KEY, "w+") as file:
+            file.write("")
+
     if not os.path.exists(STATE_FILE):
         with open(STATE_FILE, "w+") as file:
             file.write("")
@@ -225,21 +257,24 @@ def setup():
         if not os.path.isdir(dir_path):
             os.makedirs(dir_path)
 
-# Verify list in links.txt
-def check_links():
-    if not os.path.exists(LINKS_FILE):
-        clean_links_file()
-        print("PASTE LINKS INTO LINKS.TXT")
-        return False
 
-    with open(LINKS_FILE, "r") as file:
-        links = file.read().strip()
-        if len(links) == 0:
-            print("PASTE LINKS INTO LINKS.TXT")
-            return False
-        else:
-            print("NICE LINKS, SETUP COMPLETE")
+def check_links():
+    if not os.path.exists(LINKS_FILE) or os.path.getsize(LINKS_FILE) == 0:
+        clean_links_file()
+        print("No links found in", LINKS_FILE)
+        mode = input("Do you want to import links automatically? (yes/no): ").lower()
+        if mode == "yes":
+            get_playlist()
             return True
+        else:
+            print("Please paste the links into", LINKS_FILE)
+            input("Press Enter to open links.txt with Notepad...")
+            os.system("notepad.exe " + LINKS_FILE)
+            return False
+    else:
+        print("Links found in", LINKS_FILE)
+        return True
+
 
 # Reset Playlist/
 def clean_play_dir():
@@ -285,18 +320,21 @@ def export_playlists():
     for entry in os.scandir(PLAY_DIR):
         shutil.copyfile(entry.path, folder_dir + entry.name)
 
+# Keep cache, restart playlist analysis
 def restart_session():
     global current_state 
     current_state = []
-    
     clean_play_dir()
-    #clean_links_file()
+    clean_links_file()
 
+# Delete caches and exports
 def complete_reset():
     restart_session()
     clean_export_dir()
     clean_cache_dir()
+    clean_links_file()
 
+# Keep accurate results
 def auto_export_high_iter():
     if NUM_ITERATIONS > 3:
         export_playlists()
@@ -304,66 +342,75 @@ def auto_export_high_iter():
 ##################
 ### USER INPUT ###
 ##################
+        
+def one_set_up_token():
+    verbose_print("Setting up...")
+    print("PASTE YOUR sp_dc int SP_DC_KEY")
 
+def two_get_lyrics():
+    initialize_state()
+    get_lyrics_from_links()
+    verbose_print("Lyrics downloaded...")
+
+def three_categorize_lyrics():
+    load_state()
+    check_num_remaining()
+    analyze_lyrics_from_links()
+    auto_export_high_iter()
+    verbose_print("Lyrics categorized...")
+
+def four_export_playlists():
+    export_playlists()
+    verbose_print("Playlists exported...")
+
+def five_restart_session():
+    confirm = input("PRESS 1 TO CONFIRM RESTART SESSION: ")
+    confirm = int(confirm) if confirm.isnumeric() else 0
+    if confirm == 1:
+        verbose_print("Cleaning...")
+        restart_session()
+    else:
+        verbose_print("Nothing happened...")
+
+def seven_run_all():
+    two_get_lyrics()
+    three_categorize_lyrics()
+
+def eight_complete_reset():
+    five_restart_session()
+    clean_cache_dir()
+    
 def run_decision(choice):
-    # Set up
     if choice == 1: 
-        verbose_print("Setting up...")
-        print("PASTE LINKS INTO LINKS.TXT")
-    # Get lyrics
+        one_set_up_token()
     elif choice == 2:
-        initialize_state()
-        get_lyrics_from_links()
-        verbose_print("Lyrics downloaded...")
-    # Categorize lyrics
+        two_get_lyrics()
     elif choice == 3:
-        load_state()
-        check_num_remaining()
-        analyze_lyrics_from_links()
-        auto_export_high_iter()
-        verbose_print("Lyrics categorized...")
-    # Export playlists
+        three_categorize_lyrics()
     elif choice == 4:
-        export_playlists()
-        verbose_print("Playlists exported...")
-    # Restart session
+        four_export_playlists()
     elif choice == 5:
-        confirm = input("PRESS 1 TO CONFIRM RESTART SESSION: ")
-        confirm = int(confirm) if confirm.isnumeric() else 0
-        if confirm == 1:
-            verbose_print("Cleaning...")
-            restart_session()
-        else:
-            verbose_print("Nothing happened...")
-    # Clean cache
+        five_restart_session()
     elif choice == 6:
         clean_cache_dir()
     elif choice == 7:
-        # TESTING
-        get_lyrics_from_links()
-        verbose_print("Lyrics downloaded...")
-        check_num_remaining()
-        analyze_lyrics_from_links()
-        auto_export_high_iter()
-        verbose_print("Lyrics categorized...")
+        seven_run_all()
     elif choice == 8:
-        #complete_reset()
-        print("careful")
-
-    # No Choice
+        complete_reset()
     else: 
         print("Nothing happened...")
 
 def display_menu():
-    message = "Welcome to PlaylistGPT. Options:\n\
-        1. Get sp_dc token first.\n\
-        2. Get lyrics.\n\
-        3. Categorize lyrics.\n\
-        4. Export Playlists.\n\
-        5. Restart Session.\n\
-        6. Clear cache.\n\
-        7. Run all.\n\
-        8. Complete reset\n"
+    message = """Welcome to PlaylistGPT. Options:
+    1. Get sp_dc token first.
+    2. Get lyrics.
+    3. Categorize lyrics.
+    4. Export Playlists.
+    5. Restart Session.
+    6. Clear cache.
+    7. Run all.
+    8. Complete reset
+    """
     print(message)
 
 ############
@@ -371,16 +418,12 @@ def display_menu():
 ############
 
 def main():
-    
-    # Setup
     setup()
 
-    # User input
     display_menu()
     choice = input("Choice: ")
     choice = int(choice) if choice.isnumeric() else 0
-
-    # Run PlaylistGPT
+    
     run_decision(choice)
     
 if __name__ == "__main__":
