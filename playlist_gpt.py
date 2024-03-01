@@ -1,6 +1,8 @@
 import os
 import shutil
 import g4f
+from g4f.client import Client
+from g4f.Provider import Aura
 from collections import Counter
 from syrics.api import Spotify
 import argparse
@@ -13,8 +15,8 @@ parser = argparse.ArgumentParser(description='PlaylistGPT')
 parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
 args = parser.parse_args()
 
-def verbose_print(message):
-    if VERBOSE: print(message)
+def verbose_print(message, end='\n'):
+    if VERBOSE: print(message, end)
 
 #################
 ### CONSTANTS ###
@@ -29,25 +31,37 @@ EXPORT_DIR = "Export/"
 CACHE_DIR = ".cache/"
 STATE_FILE = ".state"
 # NUM_ITERATIONS = 1 # DEFAULT
-NUM_ITERATIONS = 5 # MORE ACCURACY
+NUM_ITERATIONS = 3 # MORE ACCURACY
 VERBOSE = args.verbose
+
+current_state = []
+no_lyrics = []
+
+
+##############
+### SYRICS ###
+##############
 
 with open(SP_DC_KEY, "r") as file:
     sp_dc = file.read().strip()
 
 syrics = Spotify(sp_dc)
 
-current_state = []
-
 ##################
 ### GPT 4 FREE ###
 ##################
+MODEL = "gpt-4"
+# MODEL = "gpt-3.5-turbo"
 
 PROVIDER = g4f.Provider.Aura #gpt4 best
         # g4f.Provider.Koala #gpt4
         # g4f.Provider.ChatgptDemo #gpt4
         # g4f.Provider.DeepInfra
         # g4f.Provider.AItianhuSpace
+
+client = Client( 
+    # provider=PROVIDER
+)
 
 # Playlist categorization instructions
 DIRECTION = "Analizamos las canciones y las dividimos con precisión en 5 categorías.\
@@ -57,6 +71,14 @@ DIRECTION = "Analizamos las canciones y las dividimos con precisión en 5 catego
     4. Tensión sensual.\
     5. Enamorados. \
     ANALIZA LO SIGUIENTE Y RESPONDE SOLO CON EL NÚMERO Y CATEGORÍA: "
+
+def send_message(content):
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": DIRECTION + content}],
+        # messages=[{"role": "user", "content": "hello"}],
+    )
+    return response.choices[0].message.content
 
 #########################
 ### GET PLAYLIST INFO ###
@@ -96,21 +118,23 @@ def format_lrc(lyrics_json):
 def retrieve_lyrics_from_cache(track_id):
     filename = os.path.join(CACHE_DIR, track_id)
     if os.path.exists(filename):
-        verbose_print(f"{track_id}: Cache accessed")
+        verbose_print(f"{track_id}: Cache access")
         with open(filename, "r") as file:
             return file.read()
     else:
-        verbose_print(f"{track_id}: Not in cache. Downloading...")
+        verbose_print(f"{track_id}: Not cached. Downloading...", end=' ')
         return None
     
 def process_no_lyrics(track_id):
-    with open(NO_LYRICS_FILE, 'a') as file:
-        file.write(PREPEND + track_id + "\n")
+    global no_lyrics
+    no_lyrics.append(track_id)
+    verbose_print(f"No lyrics.")
 
 def cache_lyrics(lyrics, track_id):
     filename = os.path.join(CACHE_DIR, track_id)
     with open(filename, "w+") as file:
         file.write(lyrics)
+    verbose_print("Downloaded.")
 
 def process_track_lyrics(track_id):
     cached_lyrics = retrieve_lyrics_from_cache(track_id)
@@ -124,20 +148,24 @@ def process_track_lyrics(track_id):
 
 def get_lyrics_from_links():
     global current_state
+    global no_lyrics
+    no_lyrics = []
     for track_id in current_state:
         process_track_lyrics(track_id)
 
 #########################
 ### CATEGORIZE LYRICS ###
 #########################
+    
+def prepare_no_lyrics_state():
+    global current_state
+    global no_lyrics
 
-def send_message(content):
-    response = g4f.ChatCompletion.create(
-        model="g4f.models.gpt_4",
-        provider=PROVIDER,
-        messages=[{"role": "user", "content": DIRECTION + content}],
-    )
-    return response
+    for no_lyric in no_lyrics:
+        current_state.remove(no_lyric)
+        with open(NO_LYRICS_FILE, 'a') as file:
+            file.write(PREPEND + no_lyric + "\n")
+    save_state()
 
 def categorize_lyrics_pl(category, track_id):
     if category != "uncategorized":
@@ -164,6 +192,10 @@ def finalize_category(categories):
 
 def analyze_lyrics_from_links():
     global current_state
+    
+    prepare_no_lyrics_state()
+    check_num_remaining()
+
     to_process = len(current_state)
     while to_process > 0:
         track_id = current_state[0]
@@ -183,7 +215,7 @@ def analyze_lyrics_from_links():
                             categories[category] += 1
                         else:
                             categories[category] = 1
-
+                    print(f"Categorized as: {categories}")
                     category = finalize_category(categories)
                 else:
                     response = send_message(lyrics)
@@ -272,7 +304,7 @@ def check_links():
             os.system("notepad.exe " + LINKS_FILE)
             return False
     else:
-        print("Links found in", LINKS_FILE)
+        verbose_print(f"Found links in {LINKS_FILE}. Session continuing.")
         return True
 
 
@@ -298,6 +330,11 @@ def clean_cache_dir():
 # Reset links.txt
 def clean_links_file():
     with open(LINKS_FILE, "w") as file:
+        file.write("")
+
+# Reset links.txt
+def clean_state_file():
+    with open(STATE_FILE, "w") as file:
         file.write("")
 
         
@@ -326,6 +363,7 @@ def restart_session():
     current_state = []
     clean_play_dir()
     clean_links_file()
+    clean_state_file()
 
 # Delete caches and exports
 def complete_reset():
@@ -348,13 +386,16 @@ def one_set_up_token():
     print("PASTE YOUR sp_dc int SP_DC_KEY")
 
 def two_get_lyrics():
-    initialize_state()
+    if os.path.getsize(STATE_FILE) == 0:
+        verbose_print("New playlist initialized...")
+        initialize_state()
+    else:
+        load_state()
     get_lyrics_from_links()
     verbose_print("Lyrics downloaded...")
 
 def three_categorize_lyrics():
     load_state()
-    check_num_remaining()
     analyze_lyrics_from_links()
     auto_export_high_iter()
     verbose_print("Lyrics categorized...")
@@ -367,7 +408,7 @@ def five_restart_session():
     confirm = input("PRESS 1 TO CONFIRM RESTART SESSION: ")
     confirm = int(confirm) if confirm.isnumeric() else 0
     if confirm == 1:
-        verbose_print("Cleaning...")
+        verbose_print("Cleaning...\n")
         restart_session()
     else:
         verbose_print("Nothing happened...")
@@ -396,12 +437,14 @@ def run_decision(choice):
     elif choice == 7:
         seven_run_all()
     elif choice == 8:
-        complete_reset()
+        eight_complete_reset()
+    elif choice == 9:
+        exit()
     else: 
         print("Nothing happened...")
 
 def display_menu():
-    message = """Welcome to PlaylistGPT. Options:
+    message = """\nWelcome to PlaylistGPT. Options:
     1. Get sp_dc token first.
     2. Get lyrics.
     3. Categorize lyrics.
@@ -410,6 +453,7 @@ def display_menu():
     6. Clear cache.
     7. Run all.
     8. Complete reset
+    9. Exit
     """
     print(message)
 
@@ -418,13 +462,14 @@ def display_menu():
 ############
 
 def main():
-    setup()
+    # setup()
 
-    display_menu()
-    choice = input("Choice: ")
-    choice = int(choice) if choice.isnumeric() else 0
-    
-    run_decision(choice)
+    while True:
+        setup()
+        display_menu()
+        choice = input("Choice: ")
+        choice = int(choice) if choice.isnumeric() else 0
+        run_decision(choice)
     
 if __name__ == "__main__":
     main()
