@@ -18,6 +18,7 @@ args = parser.parse_args()
 def verbose_print(message, end='\n'):
     if VERBOSE: print(message, end)
 
+
 #################
 ### CONSTANTS ###
 #################
@@ -47,9 +48,11 @@ with open(SP_DC_KEY, "r") as file:
 
 syrics = Spotify(sp_dc)
 
+
 ##################
 ### GPT 4 FREE ###
 ##################
+
 MODEL = "gpt-4"
 # MODEL = "gpt-3.5-turbo"
 
@@ -80,6 +83,7 @@ def send_message(content):
     )
     return response.choices[0].message.content
 
+
 #########################
 ### GET PLAYLIST INFO ###
 #########################
@@ -106,14 +110,13 @@ def get_playlist():
 ################################
 
 def format_lrc(lyrics_json):
-    lyrics = lyrics_json['lyrics']['lines']
-    lrc = []
-    for lines in lyrics:
-        lrc.append(lines['words'])
-
-    lrc = '\n'.join(lrc)
-    lrc = lrc.replace("\n", " ")
-    return lrc
+    lines = [line['words'] for line in lyrics_json['lyrics']['lines']]
+    lrc = ' '.join(lines)
+    remove_char = "♪'.!?¿(),"
+    for char in remove_char:
+        lrc = lrc.replace(char, "")
+    lrc.replace("-", " ")
+    return lrc.lower()
 
 def retrieve_lyrics_from_cache(track_id):
     filename = os.path.join(CACHE_DIR, track_id)
@@ -152,6 +155,7 @@ def get_lyrics_from_links():
     no_lyrics = []
     for track_id in current_state:
         process_track_lyrics(track_id)
+
 
 #########################
 ### CATEGORIZE LYRICS ###
@@ -234,6 +238,7 @@ def analyze_lyrics_from_links():
         # with
     # for
 
+
 ##################
 ### SAVE STATE ###
 ##################
@@ -268,6 +273,7 @@ def initialize_state():
         current_state.append(track_id)
 
     save_state()
+
 
 ###########################
 ### DIRECTORY FUNCTIONS ###
@@ -377,6 +383,7 @@ def auto_export_high_iter():
     if NUM_ITERATIONS > 3:
         export_playlists()
 
+
 ##################
 ### USER INPUT ###
 ##################
@@ -457,6 +464,7 @@ def display_menu():
     """
     print(message)
 
+
 ############
 ### MAIN ###
 ############
@@ -473,29 +481,3 @@ def main():
     
 if __name__ == "__main__":
     main()
-
-
-# MORE PROVIDERS
-# provider=g4f.Provider.AiChatOnline,
-# provider=g4f.Provider.ChatBase,
-# provider=g4f.Provider.ChatForAi,
-# provider=g4f.Provider.ChatgptAi,
-# provider=g4f.Provider.ChatgptNext,
-# provider=g4f.Provider.Gemini,
-# provider=g4f.Provider.FreeChatgpt,
-# provider=g4f.Provider.GeminiProChat,
-# provider=g4f.Provider.Gpt6,
-# provider=g4f.Provider.GptChatly,
-# provider=g4f.Provider.GptForLove,
-# provider=g4f.Provider.GptGo,
-# provider=g4f.Provider.GptTalkRu,
-# provider=g4f.Provider.HuggingChat,
-# provider=g4f.Provider.Liaobots,
-# provider=g4f.Provider.Llama2,
-# provider=g4f.Provider.MyShell,
-# provider=g4f.Provider.OnlineGpt,
-# provider=g4f.Provider.OpenaiChat,
-# provider=g4f.Provider.Pi,
-# provider=g4f.Provider.Poe,
-# provider=g4f.Provider.Raycast,
-# provider=g4f.Provider.You,
