@@ -50,21 +50,24 @@ After categorization, the playlists are organized as follows:
 These can then be pasted into a new spotify playlist
 
 **Playlist "arriba":**
+```
 - https://open.spotify.com/track/3wS0JIapaGqM2zqsRi3p86
 - https://open.spotify.com/track/5rAnfPGKZGyRBzI5kcAaqB
 - https://open.spotify.com/track/5qzepeW1CAsX5JhgNudQuP
 - https://open.spotify.com/track/6rdqVFwrsavgoEzV4G3nqU
-
+```
 **Playlist "tristes":**
+```
 - https://open.spotify.com/track/0KSwFEkVh0KCBR0TwqBVen
 - https://open.spotify.com/track/0TeJBV1JebreflQy2yb315
 - https://open.spotify.com/track/7rxzL7rKUVa7epgDFjecGW
 - https://open.spotify.com/track/75bTohS26lM1nbgDutXCoc
-
+```
 **Playlist "belicos":**
+```
 - https://open.spotify.com/track/4uY9DiDYULeTvV1FsYFrAW
 - https://open.spotify.com/track/1BxYaRKQzdaikFV2xJNpxd
-
+```
 
 ### Disclaimer
 *This script uses external APIs and services, and its functionality may be subject to changes in these services. Use it responsibly and in compliance with the terms of service of the respective platforms. Use at your own risk. Do not use spotify data to train AI models. This is just NLP i think. :o*
