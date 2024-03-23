@@ -1,6 +1,7 @@
 import os
 import shutil
 import g4f
+import json
 from g4f.client import Client
 from g4f.Provider import Aura
 from collections import Counter
@@ -30,6 +31,7 @@ PLAY_DIR = "Playlists/"
 NO_LYRICS_FILE = PLAY_DIR + "no_lyrics.txt"
 EXPORT_DIR = "Export/"
 CACHE_DIR = ".cache/"
+PLAYLIST_CACHE_DIR = "playlist_data.cache"
 STATE_FILE = ".state"
 # NUM_ITERATIONS = 1 # DEFAULT
 NUM_ITERATIONS = 3 # MORE ACCURACY
@@ -87,16 +89,50 @@ def send_message(content):
 #########################
 ### GET PLAYLIST INFO ###
 #########################
+def retrieve_playlist_data_from_cache(playlist_id):
+    playlist_data_file = f"{PLAYLIST_CACHE_DIR}/{playlist_id}.json"
+    if os.path.exists(playlist_data_file):
+        verbose_print(f"{playlist_id}: Playlist cache access")
+        with open(playlist_data_file, "r") as file:
+            playlist_data = json.load(file)
+    else:
+        verbose_print(f"{playlist_id}: Not cached. Downloading...", end=' ')
+        playlist_data = syrics.playlist(playlist_id)
+        with open(f'{PLAYLIST_CACHE_DIR}/{playlist_id}.json', 'w') as f:
+            json.dump(playlist_data, f)
+    return playlist_data
+
+def get_playlist_artists(playlist_data):
+    artist_dict = {}
+    for track in playlist_data["tracks"]["items"]:
+        for artist in track["track"]["artists"][:2]:
+            if artist["name"] not in artist_dict:
+                artist_dict[artist["name"]] = 1
+            else:
+                artist_dict[artist["name"]] += 1
+    artist_dict = sorted(artist_dict.items(), key=lambda x: x[1], reverse=True)
+    
+    return artist_dict
+
+def pretty_print_artists(artist_dict):
+    for (a, n) in artist_dict:
+        print(f"{a}: {n}")
 
 def get_playlist():    
     while True:
         playlist_link = input("Enter the Spotify playlist link: ")
-        if "spotify" in playlist_link.lower(): break
+        if "spotify.com" in playlist_link.lower(): break
         else: print("Enter valid spotify link.")
 
     playlist_id = playlist_link.split("/")[-1].split("?")[0]
     
-    playlist_data = syrics.playlist(playlist_id)
+    playlist_data = retrieve_playlist_data_from_cache(playlist_id)
+
+    playlist_artists = get_playlist_artists(playlist_data)
+    playlist_name = playlist_data["name"]
+    print(playlist_name)
+    pretty_print_artists(playlist_artists)
+
     playlist_total = playlist_data['tracks']['total']
     playlist = syrics.playlist_tracks(playlist_id, playlist_total)
 
@@ -451,6 +487,9 @@ def run_decision(choice):
         print("Nothing happened...")
 
 def display_menu():
+    #TODO:
+    # 10. View playlist artists
+    # 11. Download playlists
     message = """\nWelcome to PlaylistGPT. Options:
     1. Get sp_dc token first.
     2. Get lyrics.
