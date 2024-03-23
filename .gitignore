@@ -8,3 +8,5 @@ links.txt
 todo.md
 .cache/*
 .state
+playlist.json
+*.cache*
