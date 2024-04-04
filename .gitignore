@@ -1,12 +1,9 @@
-Export/*
-ClikaCache.bak/*
-Lyrics/*
-Playlists/*
 __pycache__
-SP_DC_KEY.txt
+exports/*
+categorized/*
+ClikaCache.bak/*
 links.txt
 todo.md
-.cache/*
+data/*
 .state
-playlist.json
-*.cache*
+.env

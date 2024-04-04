@@ -2,6 +2,7 @@ import os
 import shutil
 import g4f
 import json
+from dotenv import load_dotenv
 from g4f.client import Client
 from g4f.Provider import Aura
 from collections import Counter
@@ -23,16 +24,18 @@ def verbose_print(message, end='\n'):
 #################
 ### CONSTANTS ###
 #################
+load_dotenv()
 
 PREPEND = "https://open.spotify.com/track/"
-SP_DC_KEY = "SP_DC_KEY.txt"
+SP_DC_KEY = os.getenv('SP_DC_KEY')
 LINKS_FILE = "links.txt"
-PLAY_DIR = "Playlists/"
-NO_LYRICS_FILE = PLAY_DIR + "no_lyrics.txt"
-EXPORT_DIR = "Export/"
-CACHE_DIR = ".cache/"
-PLAYLIST_CACHE_DIR = "playlist_data.cache"
-STATE_FILE = ".state"
+EXPORT_DIR = "exports/"
+CATEGORIZED_DIR = "categorized/"
+DATA_DIR = "data/"
+LYRIC_CACHE_DIR = DATA_DIR + "lyrics.cache/"
+PLAYLIST_CACHE_DIR = DATA_DIR + "playlist_data.cache/"
+NO_LYRICS_FILE = DATA_DIR + "no_lyrics.txt"
+STATE_FILE = DATA_DIR + ".state"
 # NUM_ITERATIONS = 1 # DEFAULT
 NUM_ITERATIONS = 3 # MORE ACCURACY
 VERBOSE = args.verbose
@@ -45,18 +48,18 @@ no_lyrics = []
 ### SYRICS ###
 ##############
 
-with open(SP_DC_KEY, "r") as file:
-    sp_dc = file.read().strip()
+# with open(SP_DC_KEY, "r") as file:
+#     sp_dc = file.read().strip()
 
-syrics = Spotify(sp_dc)
+syrics = Spotify(SP_DC_KEY)
 
 
 ##################
 ### GPT 4 FREE ###
 ##################
 
-MODEL = "gpt-4"
-# MODEL = "gpt-3.5-turbo"
+# MODEL = "gpt-4"
+MODEL = "gpt-3.5-turbo"
 
 PROVIDER = g4f.Provider.Aura #gpt4 best
         # g4f.Provider.Koala #gpt4
@@ -80,8 +83,10 @@ DIRECTION = "Analizamos las canciones y las dividimos con precisión en 5 catego
 def send_message(content):
     response = client.chat.completions.create(
         model=MODEL,
-        messages=[{"role": "user", "content": DIRECTION + content}],
-        # messages=[{"role": "user", "content": "hello"}],
+        temperature=0,
+        messages=[
+            {"role": "system", "content": DIRECTION},
+            {"role": "user", "content": DIRECTION + content}], # "hello"}],
     )
     return response.choices[0].message.content
 
@@ -135,6 +140,7 @@ def get_playlist():
 
     playlist_total = playlist_data['tracks']['total']
     playlist = syrics.playlist_tracks(playlist_id, playlist_total)
+    verbose_print("Downloading playlist tracks.")
 
     with open("links.txt", "a+") as file:
         for track_id in playlist:
@@ -155,7 +161,7 @@ def format_lrc(lyrics_json):
     return lrc.lower()
 
 def retrieve_lyrics_from_cache(track_id):
-    filename = os.path.join(CACHE_DIR, track_id)
+    filename = os.path.join(LYRIC_CACHE_DIR, track_id)
     if os.path.exists(filename):
         verbose_print(f"{track_id}: Cache access")
         with open(filename, "r") as file:
@@ -170,7 +176,7 @@ def process_no_lyrics(track_id):
     verbose_print(f"No lyrics.")
 
 def cache_lyrics(lyrics, track_id):
-    filename = os.path.join(CACHE_DIR, track_id)
+    filename = os.path.join(LYRIC_CACHE_DIR, track_id)
     with open(filename, "w+") as file:
         file.write(lyrics)
     verbose_print("Downloaded.")
@@ -209,11 +215,11 @@ def prepare_no_lyrics_state():
 
 def categorize_lyrics_pl(category, track_id):
     if category != "uncategorized":
-        with open(os.path.join(PLAY_DIR, f"bien_{category}.txt"), 'a') as file:
+        with open(os.path.join(CATEGORIZED_DIR, f"bien_{category}.txt"), 'a') as file:
             file.write(PREPEND + track_id + "\n")
             verbose_print(f"Added {track_id} to {category.upper()}")
     else:
-        with open(os.path.join(PLAY_DIR, "uncategorized.txt"), 'a') as file:
+        with open(os.path.join(CATEGORIZED_DIR, "uncategorized.txt"), 'a') as file:
             file.write(PREPEND + track_id + "\n")
             verbose_print(f"Added {track_id} to UNCATEGORIZED")
 
@@ -240,7 +246,7 @@ def analyze_lyrics_from_links():
     while to_process > 0:
         track_id = current_state[0]
         
-        with open(os.path.join(CACHE_DIR, track_id), "r") as file:
+        with open(os.path.join(LYRIC_CACHE_DIR, track_id), "r") as file:
             lyrics = file.read()
             category = "uncategorized"
 
@@ -319,15 +325,11 @@ def initialize_state():
 def setup():
     if not check_links(): quit()
 
-    if not os.path.exists(SP_DC_KEY):
-        with open(SP_DC_KEY, "w+") as file:
-            file.write("")
-
     if not os.path.exists(STATE_FILE):
         with open(STATE_FILE, "w+") as file:
             file.write("")
 
-    for dir_path in [PLAY_DIR, CACHE_DIR]:
+    for dir_path in [CATEGORIZED_DIR, LYRIC_CACHE_DIR]:
         if not os.path.isdir(dir_path):
             os.makedirs(dir_path)
 
@@ -351,10 +353,10 @@ def check_links():
 
 
 # Reset Playlist/
-def clean_play_dir():
+def clean_categorized_dir():
     if os.path.exists(NO_LYRICS_FILE):
         os.remove(NO_LYRICS_FILE)
-    for entry in os.scandir(PLAY_DIR):
+    for entry in os.scandir(CATEGORIZED_DIR):
         with open(entry.path, "w+") as file:
             file.write("")
 
@@ -365,7 +367,7 @@ def clean_export_dir():
 
 # Reset .cache/
 def clean_cache_dir():
-    for entry in os.scandir(CACHE_DIR):
+    for entry in os.scandir(LYRIC_CACHE_DIR):
         if not os.path.isdir(entry.path):
             os.remove(entry.path)
 
@@ -396,14 +398,14 @@ def export_playlists():
     if not os.path.isdir(folder_dir):
         os.makedirs(folder_dir)
 
-    for entry in os.scandir(PLAY_DIR):
+    for entry in os.scandir(CATEGORIZED_DIR):
         shutil.copyfile(entry.path, folder_dir + entry.name)
 
 # Keep cache, restart playlist analysis
 def restart_session():
     global current_state 
     current_state = []
-    clean_play_dir()
+    clean_categorized_dir()
     clean_links_file()
     clean_state_file()
 
@@ -487,7 +489,6 @@ def run_decision(choice):
         print("Nothing happened...")
 
 def display_menu():
-    #TODO:
     # 10. View playlist artists
     # 11. Download playlists
     message = """\nWelcome to PlaylistGPT. Options:
